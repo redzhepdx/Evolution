@@ -2,29 +2,31 @@
 <CodeBlocks_project_file>
 	<FileVersion major="1" minor="6" />
 	<Project>
-		<Option title="Aimgod" />
+		<Option title="Evolution" />
 		<Option execution_dir="../Release" />
 		<Option pch_mode="2" />
 		<Option compiler="gcc" />
 		<Build>
 			<Target title="Debug">
-				<Option output="../Release/Gracius" prefix_auto="1" extension_auto="1" />
+				<Option output="../Release/Evolution" prefix_auto="1" extension_auto="1" />
 				<Option object_output="obj/Debug/" />
-				<Option type="0" />
+				<Option type="1" />
 				<Option compiler="gcc" />
+				<Option use_console_runner="0" />
 				<Compiler>
 					<Add option="-g" />
 					<Add directory="include" />
 				</Compiler>
 			</Target>
 			<Target title="Release">
-				<Option output="../Release/100Cities" prefix_auto="1" extension_auto="1" />
+				<Option output="../Release/Evolution" prefix_auto="1" extension_auto="1" />
 				<Option working_dir="../Release" />
 				<Option object_output="obj/Release/" />
-				<Option type="0" />
+				<Option type="1" />
 				<Option compiler="gcc" />
+				<Option use_console_runner="0" />
 				<Compiler>
-					<Add option="-O2" />
+					<Add option="-O3" />
 					<Add directory="include" />
 				</Compiler>
 				<Linker>
@@ -34,20 +36,25 @@
 		</Build>
 		<Compiler>
 			<Add option="-Wall" />
-			<Add option="-std=c++11" />
+			<Add option="-std=c++14" />
 			<Add option="-fexceptions" />
 			<Add directory="include" />
 			<Add directory="C:/SFML/include" />
+			<Add directory="E:/Box2D/" />
 		</Compiler>
 		<Linker>
+			<Add library="Box2D" />
 			<Add library="sfml-graphics" />
 			<Add library="sfml-window" />
 			<Add library="sfml-system" />
 			<Add directory="C:/SFML/lib" />
+			<Add directory="E:/Box2D/Box2D" />
 		</Linker>
+		<Unit filename="include/Box.h" />
 		<Unit filename="include/Game.h" />
 		<Unit filename="include/utility.h" />
 		<Unit filename="main.cpp" />
+		<Unit filename="src/Box.cpp" />
 		<Unit filename="src/Game.cpp" />
 		<Extensions>
 			<code_completion />

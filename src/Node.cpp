@@ -7,7 +7,7 @@ Node::Node(){
 Node::~Node() {}
 
 
-void Node::init(b2World* world, const sf::Vector2f& pos) {
+void Node::init(b2World* world, const sf::Vector2f& pos, float friction) {
     body_def.type = b2_dynamicBody; //this will be a dynamic body
     body_def.position.Set(-10, 20); //a little to the left
 
@@ -17,6 +17,11 @@ void Node::init(b2World* world, const sf::Vector2f& pos) {
     shape.m_radius = 0.5; //radius
 
     fixture_def.shape = &shape; //this is a pointer to the shape above
+    fixture_def.friction = friction;
+
+    b2Filter filter;
+    filter.groupIndex = -2;
+    fixture_def.filter = filter;
     body->CreateFixture(&fixture_def); //add a fixture to the body
     setPosition(pos);
     c = sf::Color(random_float(0, 255), random_float(0, 255), random_float(0, 255));

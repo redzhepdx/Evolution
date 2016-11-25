@@ -21,9 +21,9 @@ void Game::init(float _dt) {
 
 
     // Make the ground
-    groundDim = sf::Vector2f(m_view_size.x, 2.0f);
+    groundDim = sf::Vector2f(m_view_size.x, 1.0f);
     b2BodyDef groundBodyDef;
-    groundBodyDef.position.Set(0.0f, m_view_size.y - groundDim.y);
+    groundBodyDef.position.Set(0.0f, m_view_size.y - groundDim.y*0.5f);
 
     groundBody = m_world->CreateBody(&groundBodyDef);
 
@@ -83,8 +83,9 @@ void Game::run() {
 }
 
 void Game::spawnBox() {
-    m_nodes.emplace_back();
-    m_nodes.back().init(m_world.get(), sf::Vector2f(viewDimensions.x*0.5f + random_float(-5.0f, 5.0f),
+    //if(m_creatures.size() > 0) return;
+    m_creatures.emplace_back();
+    m_creatures.back().init(m_world.get(), sf::Vector2f(viewDimensions.x*0.5f + random_float(-5.0f, 5.0f),
                                         m_view_size.y - 50.0f + random_float(-5.0f, 5.0f)));
 
 
@@ -102,6 +103,9 @@ void Game::update() {
     if(sf::Mouse::isButtonPressed(sf::Mouse::Left)) {
         spawnBox();
     }
+    for(unsigned i = 0; i < m_creatures.size(); ++i) {
+        m_creatures[i].update(m_dt);
+    }
 
     m_world->Step(m_dt, 6, 2);
 }
@@ -112,12 +116,10 @@ void Game::render() {
     sf::VertexArray va(sf::Quads);
 
 
-    for(unsigned i = 0; i < m_nodes.size(); ++i) {
-        m_nodes[i].render(m_window);
+    for(unsigned i = 0; i < m_creatures.size(); ++i) {
+        m_creatures[i].render(m_window);
     }
-    for(unsigned i = 0; i < m_boxes.size(); ++i) {
-        drawRect(va, m_boxes[i].getBody(), m_boxes[i].getFixture(), m_boxes[i].getDimensions(), m_boxes[i].c);
-    }
+
     drawRect(va, groundBody, groundFixture, groundDim, sf::Color::Green);
 
     m_window.draw(va);

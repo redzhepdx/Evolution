@@ -9,7 +9,7 @@ class Node{
         Node();
         virtual ~Node();
 
-        void init(b2World* world, const sf::Vector2f& pos);
+        void init(b2World* world, const sf::Vector2f& pos, float friction);
         void setPosition(const sf::Vector2f& pos);
         void render(sf::RenderTarget& rt);
         sf::Color c;

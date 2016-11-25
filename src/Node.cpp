@@ -10,7 +10,7 @@ Node::~Node() {}
 void Node::init(b2World* world, const sf::Vector2f& pos, float friction) {
     body_def.type = b2_dynamicBody; //this will be a dynamic body
     body_def.position.Set(-10, 20); //a little to the left
-
+    body_def.fixedRotation = true;
     body = world->CreateBody(&body_def);
 
     shape.m_p.Set(0, 0); //position, relative to body position

@@ -63,7 +63,7 @@ void Muscle::render(sf::RenderTarget& rt) {
 
     sf::Vector2f a(joint->GetBodyA()->GetPosition().x, joint->GetBodyA()->GetPosition().y);
     sf::Vector2f b(joint->GetBodyB()->GetPosition().x, joint->GetBodyB()->GetPosition().y);
-    rect.setSize(sf::Vector2f(0.5f - 0.1f*(joint->GetLength()-short_len)/(long_len-short_len), magnitude(a-b)));
+    rect.setSize(sf::Vector2f(0.5f - 0.2f*(joint->GetLength()-short_len)/(long_len-short_len), magnitude(a-b)));
     rect.setOrigin(rect.getSize().x*0.5f, rect.getSize().y);
     rect.setPosition(a);
     rect.rotate(vecToAngle(b-a));

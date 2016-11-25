@@ -31,6 +31,7 @@ void Game::init(float _dt) {
     b2PolygonShape groundBox;
     groundBox.SetAsBox(groundDim.x*0.5f, groundDim.y*0.5f);
     groundFixture = groundBody->CreateFixture(&groundBox, 0.0f);
+    groundFixture->SetFriction(1.0);
 
     for(int i = 0; i < 2; ++i) {
         spawnBox();

@@ -4,7 +4,8 @@
 Node::Node(){
 }
 
-Node::~Node() {}
+Node::~Node() {
+}
 
 
 void Node::init(b2World* world, const sf::Vector2f& pos, float friction) {

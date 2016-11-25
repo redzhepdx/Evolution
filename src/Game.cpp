@@ -32,7 +32,9 @@ void Game::init(float _dt) {
     groundBox.SetAsBox(groundDim.x*0.5f, groundDim.y*0.5f);
     groundFixture = groundBody->CreateFixture(&groundBox, 0.0f);
 
-    for(int i = 0; i < 200; ++i) spawnBox();
+    for(int i = 0; i < 2; ++i) {
+        spawnBox();
+    }
 }
 
 void Game::drawRect(sf::VertexArray& va, b2Body* b, b2Fixture* f, const sf::Vector2f& dim, const sf::Color& c) {
@@ -62,7 +64,9 @@ void Game::run() {
         // Check events
         sf::Event event;
         while(m_window.pollEvent(event)){
-            if(event.type == sf::Event::Closed) m_window.close();
+            if(event.type == sf::Event::Closed) {
+                m_window.close();
+            }
         }
 
         // Update
@@ -79,12 +83,17 @@ void Game::run() {
 }
 
 void Game::spawnBox() {
-    Box newBox;
+    m_nodes.emplace_back();
+    m_nodes.back().init(m_world.get(), sf::Vector2f(viewDimensions.x*0.5f + random_float(-5.0f, 5.0f),
+                                        m_view_size.y - 50.0f + random_float(-5.0f, 5.0f)));
+
+
+    /*Box newBox;
     newBox.init(m_world.get(), sf::Vector2f(viewDimensions.x*0.5f + random_float(-5.0f, 5.0f),
                                             m_view_size.y - 50.0f + random_float(-5.0f, 5.0f)),
                 sf::Vector2f(random_float(0.5f, 2.0f), random_float(0.5f, 2.0f)),
                 sf::Color(random_float(0, 255), random_float(0, 255), random_float(0, 255)));
-    m_boxes.push_back(newBox);
+    m_boxes.push_back(newBox);*/
 }
 
 void Game::update() {
@@ -103,6 +112,9 @@ void Game::render() {
     sf::VertexArray va(sf::Quads);
 
 
+    for(unsigned i = 0; i < m_nodes.size(); ++i) {
+        m_nodes[i].render(m_window);
+    }
     for(unsigned i = 0; i < m_boxes.size(); ++i) {
         drawRect(va, m_boxes[i].getBody(), m_boxes[i].getFixture(), m_boxes[i].getDimensions(), m_boxes[i].c);
     }

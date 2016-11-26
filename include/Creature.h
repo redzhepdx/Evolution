@@ -13,12 +13,14 @@ class Muscle {
         void render(sf::RenderTarget& rt);
 
         b2DistanceJoint* joint = nullptr;
-        float contract_time = 0.25f;
-        float extend_time = 0.75f;
 
-        float long_len = 3.0f;
         float short_len = 1.5f;
+        float long_len = 3.0f;
         float* target_len = nullptr;
+
+        float extend_time = 0.75f;
+        float contract_time = 0.25f;
+
         float strength = 1.0f;
 };
 

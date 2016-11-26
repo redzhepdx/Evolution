@@ -50,16 +50,12 @@
 			<Add directory="C:/SFML/lib" />
 			<Add directory="E:/Box2D/Box2D" />
 		</Linker>
-		<Unit filename="include/Box.h" />
 		<Unit filename="include/Creature.h" />
 		<Unit filename="include/Game.h" />
-		<Unit filename="include/Node.h" />
 		<Unit filename="include/utility.h" />
 		<Unit filename="main.cpp" />
-		<Unit filename="src/Box.cpp" />
 		<Unit filename="src/Creature.cpp" />
 		<Unit filename="src/Game.cpp" />
-		<Unit filename="src/Node.cpp" />
 		<Extensions>
 			<code_completion />
 			<envvars />

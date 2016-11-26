@@ -1,7 +1,8 @@
 #ifndef CREATURE_H
 #define CREATURE_H
 
-#include "Node.h"
+#include <Box2D/Box2D.h>
+#include <SFML/Graphics.hpp>
 
 class Muscle {
     public:
@@ -19,6 +20,21 @@ class Muscle {
         float short_len = 1.5f;
         float* target_len = nullptr;
         float strength = 1.0f;
+};
+
+class Node{
+    public:
+        Node();
+        virtual ~Node();
+
+        void init(b2World* world, const sf::Vector2f& pos, float friction);
+        void setPosition(const sf::Vector2f& pos);
+        void render(sf::RenderTarget& rt);
+        sf::Color c;
+        b2CircleShape shape;
+        b2FixtureDef fixture_def;
+        b2BodyDef body_def;
+        b2Body* body = nullptr;
 };
 
 class Creature {

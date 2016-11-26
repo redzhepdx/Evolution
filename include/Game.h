@@ -5,8 +5,6 @@
 #include "SFML/Graphics.hpp"
 #include <memory>
 #include <vector>
-#include "Box.h"
-#include "Node.h"
 #include "Creature.h"
 
 class Game {
@@ -41,8 +39,6 @@ class Game {
         b2Vec2 gravity;
         std::unique_ptr<b2World> m_world;
         std::vector<Creature> m_creatures;
-        std::vector<Box> m_boxes;
-        std::vector<Node> m_nodes;
 
         b2Body* groundBody;
         b2Fixture* groundFixture;

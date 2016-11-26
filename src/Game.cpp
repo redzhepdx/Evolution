@@ -88,14 +88,6 @@ void Game::spawnBox() {
     m_creatures.emplace_back();
     m_creatures.back().init(m_world.get(), sf::Vector2f(viewDimensions.x*0.5f + random_float(-5.0f, 5.0f),
                                         m_view_size.y - 50.0f + random_float(-5.0f, 5.0f)));
-
-
-    /*Box newBox;
-    newBox.init(m_world.get(), sf::Vector2f(viewDimensions.x*0.5f + random_float(-5.0f, 5.0f),
-                                            m_view_size.y - 50.0f + random_float(-5.0f, 5.0f)),
-                sf::Vector2f(random_float(0.5f, 2.0f), random_float(0.5f, 2.0f)),
-                sf::Color(random_float(0, 255), random_float(0, 255), random_float(0, 255)));
-    m_boxes.push_back(newBox);*/
 }
 
 void Game::update() {

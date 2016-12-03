@@ -8,43 +8,59 @@
 #include "Creature.h"
 
 class Game {
-        static Game m_instance;
-    public:
-        static Game& i() { return m_instance; }
+	static Game m_instance;
+public:
+	static Game& i() { return m_instance; }
 
-        void init(float _dt);
-        void run();
-        void restart();
-        void update();
-        void render();
+	void init(float _dt);
+	void run();
+	void restart();
+	void update();
+	void render();
 
-        float getDeltaTime();
-        void setDeltaTime(float _dt);
-        float getTime();
-        sf::Vector2f getViewSize();
+	float getDeltaTime();
+	void setDeltaTime(float _dt);
+	float getTime();
+	sf::Vector2f getViewSize();
 
+	void drawRect(sf::VertexArray& va, b2Body* b, b2Fixture* f, const sf::Vector2f& dim, const sf::Color& c = sf::Color::Magenta);
+	void spawnCreature();
+	std::unique_ptr<Creature> crossoveredCreature(std::unique_ptr<Creature> &parent_1, std::unique_ptr<Creature> &parent_2);
+	sf::Vector2f getSpawnPos();
+private:
+	float m_accumulator = 0.0f;
+	float m_dt = 1 / 125.0f;
+	sf::RenderWindow m_window;
+	sf::Vector2f m_view_size;
+	float m_global_timer = 0.0f;
+	bool m_first_launch = true;
+	sf::Font m_font;
 
-        void drawRect(sf::VertexArray& va, b2Body* b, b2Fixture* f, const sf::Vector2f& dim, const sf::Color& c = sf::Color::Magenta);
-        void spawnBox();
-    private:
-        float m_accumulator = 0.0f;
-        float m_dt = 1 / 125.0f;
-        sf::RenderWindow m_window;
-        sf::Vector2f m_view_size;
-        float m_global_timer = 0.0f;
-        bool m_first_launch = true;
-        sf::Font m_font;
+	sf::View view;
+	b2Vec2 gravity;
+	std::unique_ptr<b2World> m_world;
+	std::vector<std::unique_ptr<Creature>> m_creatures;
 
-        sf::View view;
-        b2Vec2 gravity;
-        std::unique_ptr<b2World> m_world;
-        std::vector<Creature> m_creatures;
+	b2Body* groundBody;
+	b2Fixture* groundFixture;
+	sf::Vector2f groundDim;
 
-        b2Body* groundBody;
-        b2Fixture* groundFixture;
-        sf::Vector2f groundDim;
+	sf::Vector2f viewDimensions;
 
-        sf::Vector2f viewDimensions;
+	float best_x = 0.0f;
+	// Genetic Algorithm
+	unsigned gen = 1;
+	unsigned curr_creature_id = 0;
+
+	bool j_last_frame = false;
+	bool simulate_quick = false;
+
+	bool cam_key_last_frame = false;
+	bool show_best = false;
+
+	std::unique_ptr<Creature> best_creature = nullptr;
+	int best_c_gen = 0;
+	int best_c_id = 0;
 };
 
 #endif // GAME_H

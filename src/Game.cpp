@@ -166,24 +166,30 @@ void Game::update() {
 
 			//Save best 3 child , it will success as at least last population
 			for (int i = 0; i < 3; i++) {
-				new_creatures.push_back(std::move(m_creatures[i]));
+				new_creatures.push_back(m_creatures[i]->copy());
 				new_creatures.back()->setPosition(spawn_pos);
 			}
 			
-			for (int i = 0; i < m_creatures.size(); ++i) {
+			for (int i = 0; i < m_creatures.size() - 3; ++i) {
 				//Tournament Selection
 				std::vector<std::unique_ptr<Creature>> chosens;
 
-				int electedIndex;
-								
 				while (chosens.size() <= 4) {
+
 					std::cout << m_creatures[0]->fitness << std::endl;
-					electedIndex = randomSelection(m_creatures);
+					int electedIndex = randomSelection(m_creatures);
+
+					bool found = false;
+
+					for (int j = 0; j < chosens.size(); j++) {
+						if (chosens[j].get() == m_creatures[electedIndex].get()) {
+							found = true;
+							break;
+						}
+					}
 					
-					if (std::find(chosens.begin(), chosens.end(), m_creatures[electedIndex]) == chosens.end()) {
-					
-						chosens.push_back(std::move(m_creatures[electedIndex]));
-					
+					if (!found) {
+						chosens.push_back(m_creatures[electedIndex]->copy());
 					}
 			
 				}
@@ -304,35 +310,54 @@ void Game::render() {
 std::unique_ptr<Creature> Game::crossoveredCreature(std::unique_ptr<Creature> &parent_1, std::unique_ptr<Creature> &parent_2) {
 	
 	std::unique_ptr<Creature> child = std::make_unique<Creature>();
+	child->world = parent_1->world;
+	child->heart_beat = parent_1->heart_beat;
+	
 
-	int randomCromosomeIndex = random_int(0, parent_1->nodes.size());
+	int randomCromosomeIndex = random_int(0, parent_1->nodes.size() - 1);
 
-	for (int i = 0; i < randomCromosomeIndex; i++) {
-		child->nodes.push_back(std::move(parent_1->nodes[i]));
+	for (int i = 0; i <= randomCromosomeIndex; i++) {
+		child->nodes.push_back(parent_1->nodes[i]->copy());
 	}
 
-	for (int i = 0; i < randomCromosomeIndex; i++) {
-		for (int j = 0; j < randomCromosomeIndex; j++) {
-			if (parent_1->muscles[i]->a == i && parent_1->muscles[i]->b == j && i != j) {
-				child->addMuscle(i, j);
-			}
+	for (int m = 0; m < parent_1->muscles.size(); m++) {
+		if (parent_1->muscles[m]->a <= randomCromosomeIndex && parent_1->muscles[m]->b <= randomCromosomeIndex) {
+			child->addMuscle(parent_1->muscles[m]->a, parent_1->muscles[m]->b);
 		}
 	}
 
 	if (randomCromosomeIndex < parent_2->nodes.size()) {
-		for (int i = randomCromosomeIndex; parent_2->nodes.size(); i++) {
-			child->nodes.push_back(std::move(parent_2->nodes[i]));
+		for (int i = randomCromosomeIndex; i<parent_2->nodes.size(); i++) {
+			child->nodes.push_back(parent_2->nodes[i]->copy());
 		}
 		
-		for (int i = randomCromosomeIndex; i < parent_2->nodes.size(); i++) {
-			for (int j = randomCromosomeIndex; j < parent_2->nodes.size(); j++) {
-				if (parent_2->muscles[i]->a == i && parent_2->muscles[i]->b == j && i != j) {
-					child->addMuscle(i, j);
-				}
+		for (int m = 0; m < parent_2->muscles.size(); m++) {
+			if (parent_2->muscles[m]->a >= randomCromosomeIndex && parent_2->muscles[m]->b >= randomCromosomeIndex) {
+				child->addMuscle(parent_2->muscles[m]->a, parent_2->muscles[m]->b);
 			}
 		}
 	}
 
+	bool connectionMuscleFound = false;
+	for (int m = 0; m < child->muscles.size(); m++) {
+		for (int i = 0; i < child->nodes.size(); i++) {
+			for (int j = 0; j < child->nodes.size(); j++) {
+				if ((child->muscles[m]->a != i || child->muscles[m]->b != j) && i != j) {
+					child->addMuscle(i, j);
+					connectionMuscleFound = true;
+					break;
+				}
+			}
+			if (connectionMuscleFound) {
+				break;
+			}
+		}
+		if (connectionMuscleFound) {
+			break;
+		}
+	}
+
+	child->saveSnapshot(child->snapshot);
 	child->checkLoneNodes();
 
 	return child;

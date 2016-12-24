@@ -93,34 +93,6 @@ std::unique_ptr<Creature> Creature::mutatedCopy() {
 }
 
 
-std::unique_ptr<Creature> Creature::normalCopy() {
-	std::unique_ptr<Creature> mutated = std::make_unique<Creature>();
-	mutated->world = world;
-	mutated->heart_beat = heart_beat + 0.2f*r();
-
-	for (unsigned i = 0; i < nodes.size(); ++i)
-		mutated->nodes.push_back(nodes[i]->mutatedCopy());
-
-	for (unsigned i = 0; i < muscles.size(); ++i)
-		mutated->muscles.push_back(muscles[i]->mutatedCopy(mutated->nodes));
-
-	if (random_int(0, 100) < 5) mutated->addRandomNode();
-	if (random_int(0, 100) < 5) mutated->addMuscle();
-
-	// Remove random node
-	if (random_int(0, 100) < 5) mutated->removeRandomNode();
-
-	// Remove random muscle
-	if (random_int(0, 100) < 5) mutated->removeRandomMuscle();
-
-	// Last checks
-	mutated->checkMuscleOverlap();
-	mutated->checkLoneNodes();
-	mutated->setActive(false);
-	mutated->saveSnapshot(mutated->snapshot);
-	return std::move(mutated);
-}
-
 
 const float NODE_DIST = 1.5f;
 void Creature::removeRandomNode() {

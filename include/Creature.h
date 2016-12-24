@@ -75,7 +75,6 @@ public:
 	void setActive(bool active);
 	std::unique_ptr<Creature> mutatedCopy();
 	std::unique_ptr<Creature> copy();
-	std::unique_ptr<Creature> normalCopy();
 	void removeRandomNode();
 	void removeRandomMuscle();
 	void checkMuscleOverlap();

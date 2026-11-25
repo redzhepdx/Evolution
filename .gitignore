@@ -2,6 +2,7 @@ Evolution.depend
 Evolution.layout
 obj
 bin
+build/
 
 # Windows image file caches
 Thumbs.db

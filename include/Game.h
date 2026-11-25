@@ -1,7 +1,7 @@
 #ifndef GAME_H
 #define GAME_H
 
-#include <Box2D/Box2D.h>
+#include <box2d/box2d.h>
 #include "SFML/Graphics.hpp"
 #include <memory>
 #include <vector>
@@ -24,10 +24,17 @@ public:
 	sf::Vector2f getViewSize();
 
 	void drawRect(sf::VertexArray& va, b2Body* b, b2Fixture* f, const sf::Vector2f& dim, const sf::Color& c = sf::Color::Magenta);
-	void spawnCreature();
+	void spawnCreature(unsigned island_idx);
 	std::unique_ptr<Creature> crossoveredCreature(std::unique_ptr<Creature> &parent_1, std::unique_ptr<Creature> &parent_2);
 	sf::Vector2f getSpawnPos();
 private:
+	void stepIsland(unsigned idx);
+	void advanceIslandGeneration(unsigned idx, const sf::Vector2f& spawn_pos);
+	// Deep-clones a creature's genome into a fresh body in dest_world (unlike
+	// Creature::copy(), which always rebuilds in the source's own world) so a
+	// creature can migrate between islands without crossing Box2D worlds.
+	std::unique_ptr<Creature> cloneCreatureToWorld(Creature* src, b2World* dest_world);
+
 	float m_accumulator = 0.0f;
 	float m_dt = 1 / 125.0f;
 	sf::RenderWindow m_window;
@@ -38,11 +45,16 @@ private:
 
 	sf::View view;
 	b2Vec2 gravity;
-	std::unique_ptr<b2World> m_world;
-	std::vector<std::unique_ptr<Creature>> m_creatures;
 
-	b2Body* groundBody;
-	b2Fixture* groundFixture;
+	// The population is split into independent islands, each with its own
+	// Box2D world and its own sub-population, so islands can be stepped and
+	// bred fully in parallel across cores.
+	std::vector<std::unique_ptr<b2World>> m_worlds;
+	std::vector<std::vector<std::unique_ptr<Creature>>> m_islands;
+	std::vector<std::unique_ptr<Creature>> m_island_candidates; // scratch: best creature per island this generation
+
+	std::vector<b2Body*> groundBodies;
+	std::vector<b2Fixture*> groundFixtures;
 	sf::Vector2f groundDim;
 
 	sf::Vector2f viewDimensions;
@@ -50,6 +62,7 @@ private:
 	float best_x = 0.0f;
 	// Genetic Algorithm
 	unsigned gen = 1;
+	unsigned curr_island_id = 0;
 	unsigned curr_creature_id = 0;
 
 	bool j_last_frame = false;

@@ -1,7 +1,7 @@
 #ifndef CREATURE_H
 #define CREATURE_H
 
-#include <Box2D/Box2D.h>
+#include <box2d/box2d.h>
 #include <SFML/Graphics.hpp>
 #include <memory>
 

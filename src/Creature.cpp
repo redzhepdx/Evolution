@@ -292,8 +292,6 @@ void Muscle::init(b2World* world_, std::vector<std::unique_ptr<Node>>& nodes, in
 	jointDef.localAnchorA = b2Vec2(a2b.x, a2b.y);
 	jointDef.localAnchorB = b2Vec2(-a2b.x, -a2b.y);
 	jointDef.collideConnected = false;
-	jointDef.frequencyHz = 0;
-
 
 	short_len = short_len_;
 	long_len = long_len_;
@@ -303,6 +301,9 @@ void Muscle::init(b2World* world_, std::vector<std::unique_ptr<Node>>& nodes, in
 
 	world = world_;
 	jointDef.length = long_len;
+	// stiffness=0 ("rigid") distance joints freeze under gravity on this Box2D
+	// build, so emulate a rigid rod with a very stiff, well-damped spring instead.
+	b2LinearStiffness(jointDef.stiffness, jointDef.damping, 8.0f, 1.0f, jointDef.bodyA, jointDef.bodyB);
 	target_len = &short_len;
 	joint = (b2DistanceJoint*)world->CreateJoint(&jointDef);
 	joint->SetLength(long_len);
@@ -337,7 +338,8 @@ void Muscle::update(float c_time, float dt) {
 		(extend_time < contract_time && extend_time < c_time) ?
 		&short_len : &long_len;
 
-	joint->SetLength(joint->GetLength() + strength*((*target_len) - joint->GetLength())*dt);
+	float new_length = joint->GetLength() + strength*((*target_len) - joint->GetLength())*dt;
+	joint->SetLength(new_length);
 }
 
 void Muscle::setActive(bool active) {
@@ -401,6 +403,7 @@ void Node::init(b2World* world_, const sf::Vector2f& pos, float friction) {
 
 	fixture_def.shape = &shape; //this is a pointer to the shape above
 	fixture_def.friction = friction;
+	fixture_def.density = 1.0f;
 
 	b2Filter filter;
 	filter.groupIndex = -2;
@@ -413,7 +416,7 @@ void Node::init(b2World* world_, const sf::Vector2f& pos, float friction) {
 
 void Node::setActive(bool active) {
 	if (body == nullptr) return;
-	body->SetActive(active);
+	body->SetEnabled(active);
 }
 
 sf::Vector2f Node::getPosition() const {

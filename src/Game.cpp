@@ -2,13 +2,21 @@
 #include "Game.h"
 #include "utility.h"
 #include <iostream>
+#include <thread>
+#include <mutex>
 
 Game Game::m_instance;
-const unsigned POPULATION = 20;
+const unsigned POPULATION = 1000;
+// How often (in generations) islands exchange their best creature, to limit
+// each island's independent population from settling into its own local optimum.
+const unsigned MIGRATION_INTERVAL = 5;
+
+static std::mutex g_cout_mutex;
+
 void Game::init(float _dt) {
 	setDeltaTime(_dt);
 	m_view_size = sf::Vector2f(1280, 600);
-	m_font.loadFromFile("ChunkFive/Chunkfive.otf");
+	m_font.loadFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf");
 	viewDimensions.y = 15.0f;
 	viewDimensions.x = viewDimensions.y*m_view_size.x / m_view_size.y;
 
@@ -16,25 +24,45 @@ void Game::init(float _dt) {
 	view.setViewport(sf::FloatRect(0, 0, 1, 1));
 
 	gravity = b2Vec2(0.0f, 9.81);
-	m_world = std::make_unique<b2World>(gravity);
 
+	// Split the population into independent islands (one Box2D world each)
+	// so they can be stepped and bred fully in parallel across cores.
+	unsigned num_islands = std::max(1u, std::thread::hardware_concurrency());
+	num_islands = std::min(num_islands, POPULATION);
 
-	// Make the ground
 	groundDim = sf::Vector2f(m_view_size.x, 1.0f);
-	b2BodyDef groundBodyDef;
-	groundBodyDef.position.Set(0.0f, m_view_size.y - groundDim.y*0.5f);
 
-	groundBody = m_world->CreateBody(&groundBodyDef);
+	m_worlds.resize(num_islands);
+	m_islands.resize(num_islands);
+	m_island_candidates.resize(num_islands);
+	groundBodies.resize(num_islands);
+	groundFixtures.resize(num_islands);
 
-	// Ground fixture
-	b2PolygonShape groundBox;
-	groundBox.SetAsBox(groundDim.x*0.5f, groundDim.y*0.5f);
-	groundFixture = groundBody->CreateFixture(&groundBox, 0.0f);
-	groundFixture->SetFriction(1.0);
+	for (unsigned i = 0; i < num_islands; ++i) {
+		m_worlds[i] = std::make_unique<b2World>(gravity);
 
-	for (int i = 0; i < POPULATION; ++i) spawnCreature();
-	m_creatures[curr_creature_id = 0]->setActive(true);
-	best_creature = m_creatures[0]->copy();
+		// Make the ground
+		b2BodyDef groundBodyDef;
+		groundBodyDef.position.Set(0.0f, m_view_size.y - groundDim.y*0.5f);
+
+		groundBodies[i] = m_worlds[i]->CreateBody(&groundBodyDef);
+
+		// Ground fixture
+		b2PolygonShape groundBox;
+		groundBox.SetAsBox(groundDim.x*0.5f, groundDim.y*0.5f);
+		groundFixtures[i] = groundBodies[i]->CreateFixture(&groundBox, 0.0f);
+		groundFixtures[i]->SetFriction(1.0);
+	}
+
+	// Distribute the population round-robin across islands
+	for (unsigned i = 0; i < POPULATION; ++i) spawnCreature(i % num_islands);
+
+	curr_island_id = 0;
+	curr_creature_id = 0;
+	for (auto& island : m_islands)
+		for (auto& c : island) c->setActive(true);
+
+	best_creature = m_islands[0][0]->copy();
 	best_creature->setActive(true);
 }
 
@@ -43,8 +71,8 @@ void Game::drawRect(sf::VertexArray& va, b2Body* b, b2Fixture* f, const sf::Vect
 	v.color = c;
 	b2PolygonShape* polygonShape = (b2PolygonShape*)f->GetShape();
 
-	for (int i = 0; i < polygonShape->GetVertexCount(); ++i) {
-		const b2Vec2& b2v = b->GetWorldPoint(polygonShape->GetVertex(i));
+	for (int i = 0; i < polygonShape->m_count; ++i) {
+		const b2Vec2& b2v = b->GetWorldPoint(polygonShape->m_vertices[i]);
 		v.position.x = b2v.x;
 		v.position.y = b2v.y;
 		va.append(v);
@@ -74,19 +102,23 @@ void Game::run() {
 		if (cam_key_now && !cam_key_last_frame) show_best = !show_best;
 		cam_key_last_frame = cam_key_now;
 
+		// Check events
+		sf::Event event;
+		while (m_window.pollEvent(event)) {
+			if (event.type == sf::Event::Closed) {
+				m_window.close();
+			}
+			if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape) {
+				m_window.close();
+			}
+		}
+
 		if (simulate_quick) update(); // Just simulate as fast as possible
 		else {
 			// Update
 			if (sf::Keyboard::isKeyPressed(sf::Keyboard::K)) elapsed *= 4.0; // Simulate 4x
 			m_accumulator += elapsed;
 
-			// Check events
-			sf::Event event;
-			while (m_window.pollEvent(event)) {
-				if (event.type == sf::Event::Closed) {
-					m_window.close();
-				}
-			}
 			while (m_accumulator > m_dt) {
 				m_accumulator -= m_dt;
 
@@ -99,10 +131,11 @@ void Game::run() {
 	}
 }
 sf::Vector2f Game::getSpawnPos() { return sf::Vector2f(0, m_view_size.y - viewDimensions.y*0.2); }
-void Game::spawnCreature() {
-	m_creatures.push_back(std::make_unique<Creature>());
-	m_creatures.back()->init(m_world.get(), sf::Vector2f(0, 0));
-	m_creatures.back()->setPosition(getSpawnPos());
+void Game::spawnCreature(unsigned island_idx) {
+	auto& island = m_islands[island_idx];
+	island.push_back(std::make_unique<Creature>());
+	island.back()->init(m_worlds[island_idx].get(), sf::Vector2f(0, 0));
+	island.back()->setPosition(getSpawnPos());
 }
 
 static inline float getFitness(float k) {
@@ -122,25 +155,155 @@ int randomSelection(std::vector<std::unique_ptr<Creature>>& p) {
 	return p.size() - 1;
 }
 
+std::unique_ptr<Creature> Game::cloneCreatureToWorld(Creature* src, b2World* dest_world) {
+	auto dst = std::make_unique<Creature>();
+	dst->world = dest_world;
+	dst->heart_beat = src->heart_beat;
+
+	for (auto& n : src->nodes) {
+		auto new_node = std::make_unique<Node>();
+		new_node->init(dest_world, n->getPosition(), n->fixture_def.friction);
+		dst->nodes.push_back(std::move(new_node));
+	}
+
+	for (auto& m : src->muscles) {
+		auto new_muscle = std::make_unique<Muscle>();
+		new_muscle->init(dest_world, dst->nodes, m->a, m->b,
+			m->short_len, m->long_len, m->extend_time, m->contract_time, m->strength);
+		dst->muscles.push_back(std::move(new_muscle));
+	}
+
+	dst->setActive(false);
+	dst->saveSnapshot(dst->snapshot);
+	return dst;
+}
+
+void Game::stepIsland(unsigned idx) {
+	for (auto& c : m_islands[idx]) c->update(m_dt);
+	m_worlds[idx]->Step(m_dt, 8, 3);
+}
+
+void Game::advanceIslandGeneration(unsigned idx, const sf::Vector2f& spawn_pos) {
+	auto& creatures = m_islands[idx];
+
+	// Find this island's best creature before breeding reshuffles it
+	unsigned local_best_idx = 0;
+	for (unsigned i = 1; i < creatures.size(); ++i)
+		if (creatures[i]->fitness > creatures[local_best_idx]->fitness) local_best_idx = i;
+	m_island_candidates[idx] = creatures[local_best_idx]->copy();
+
+	// Create this island's next generation
+	std::sort(creatures.begin(), creatures.end(), [](const std::unique_ptr<Creature>& c1,
+														 const std::unique_ptr<Creature>& c2)
+														{ return c1->fitness > c2->fitness; });
+
+	{
+		std::lock_guard<std::mutex> lock(g_cout_mutex);
+		std::cout << "> Island#" << idx << " G#" << gen << "\n";
+		int print_count = std::min(2, (int)creatures.size());
+		for (int i = 0; i < print_count; ++i) std::cout << creatures[i]->fitness << "\n";
+	}
+
+	std::vector<std::unique_ptr<Creature>> new_creatures;
+
+	//Save best children, it will succeed as at least last population
+	int keep_count = std::min<int>(3, (int)creatures.size());
+	for (int i = 0; i < keep_count; i++) {
+		new_creatures.push_back(creatures[i]->copy());
+		new_creatures.back()->setPosition(spawn_pos);
+	}
+
+	for (int i = 0; i < (int)creatures.size() - keep_count; ++i) {
+		//Tournament Selection
+		std::vector<std::unique_ptr<Creature>> chosens;
+		std::vector<int> chosen_indices;
+
+		unsigned tournament_size = std::min<size_t>(4, creatures.size() - 1);
+		unsigned selection_attempts = 0;
+		unsigned max_weighted_attempts = (unsigned)creatures.size() * 20u + 100u;
+		while (chosens.size() <= tournament_size) {
+			// Fitness-weighted selection can degenerate to a single deterministic
+			// index when total fitness is near zero (e.g. early generations, or
+			// small islands). Fall back to a uniform pick so this always terminates.
+			int electedIndex = (++selection_attempts <= max_weighted_attempts)
+				? randomSelection(creatures)
+				: random_int(0, (int)creatures.size() - 1);
+
+			bool found = false;
+
+			for (unsigned j = 0; j < chosen_indices.size(); j++) {
+				if (chosen_indices[j] == electedIndex) {
+					found = true;
+					break;
+				}
+			}
+
+			if (!found) {
+				chosen_indices.push_back(electedIndex);
+				chosens.push_back(creatures[electedIndex]->copy());
+			}
+		}
+
+		std::sort(chosens.begin(), chosens.end(), [](const std::unique_ptr<Creature>& c1,
+			const std::unique_ptr<Creature>& c2) { return c1->fitness > c2->fitness; });
+
+		std::unique_ptr<Creature> cross_child = crossoveredCreature(chosens[0], chosens[1]);
+
+		new_creatures.push_back(cross_child->mutatedCopy());
+
+		new_creatures.back()->setPosition(spawn_pos);
+	}
+
+	// Make the new population, current population
+	for (unsigned i = 0; i < creatures.size(); ++i)
+		creatures[i] = std::move(new_creatures[i]);
+
+	// Activate the whole new generation at once
+	for (auto& c : creatures) c->setActive(true);
+}
+
 void Game::update() {
 	m_global_timer += m_dt;
 
 	best_creature->update(m_dt, false);
-	m_creatures[curr_creature_id]->update(m_dt);
-	m_world->Step(m_dt, 1, 1);
 
-	// Create new creature after a while
+	// Step every island's physics and creatures in parallel across cores.
+	{
+		std::vector<std::thread> threads;
+		threads.reserve(m_worlds.size());
+		for (unsigned i = 0; i < m_worlds.size(); ++i)
+			threads.emplace_back(&Game::stepIsland, this, i);
+		for (auto& t : threads) t.join();
+	}
+
+	// Evaluate the whole population for 15s, then breed the next generation
 	if (m_global_timer >= 15.0f) {
 		m_global_timer = 0.0f;
 
-		m_creatures[curr_creature_id]->setActive(false);
-
 		sf::Vector2f spawn_pos = getSpawnPos();
-		// Set the best creature if it's better
-		if (best_creature->fitness < m_creatures[curr_creature_id]->fitness) {
+
+		for (auto& island : m_islands)
+			for (auto& c : island) c->setActive(false);
+
+		// Each island breeds its own next generation independently, so this
+		// also runs fully in parallel.
+		{
+			std::vector<std::thread> threads;
+			threads.reserve(m_islands.size());
+			for (unsigned i = 0; i < m_islands.size(); ++i)
+				threads.emplace_back(&Game::advanceIslandGeneration, this, i, spawn_pos);
+			for (auto& t : threads) t.join();
+		}
+
+		// Pick the best creature across all islands
+		unsigned best_island = 0;
+		for (unsigned i = 1; i < m_island_candidates.size(); ++i)
+			if (m_island_candidates[i]->fitness > m_island_candidates[best_island]->fitness) best_island = i;
+
+		if (m_island_candidates[best_island]->fitness > best_creature->fitness) {
 			best_c_gen = gen;
-			best_c_id = curr_creature_id;
-			best_creature = m_creatures[curr_creature_id]->copy();
+			best_c_id = best_island;
+			best_creature = std::move(m_island_candidates[best_island]);
 		}
 		else { // Reset
 			best_creature = best_creature->copy();
@@ -148,82 +311,34 @@ void Game::update() {
 		best_creature->setActive(true);
 		best_creature->setPosition(spawn_pos);
 
-		// All creatures did the test,
-		if (curr_creature_id >= POPULATION - 1) {
-			// Create a new generation
-			std::sort(m_creatures.begin(), m_creatures.end(), [](const std::unique_ptr<Creature>& c1,
-																 const std::unique_ptr<Creature>& c2)
-																{ return c1->fitness > c2->fitness; });
-
-			std::cout << "> G#" << gen << "\n";
-
-			std::vector<std::unique_ptr<Creature>> new_creatures;
-
-			int print_count = std::min(2, (int)m_creatures.size());
-			for (int i = 0; i < print_count; ++i) {
-				std::cout << m_creatures[i]->fitness << "\n";
+		// Periodically exchange each island's best creature with its neighbor's,
+		// so a converged island can be rescued by genes from elsewhere.
+		if (m_islands.size() > 1 && gen % MIGRATION_INTERVAL == 0) {
+			std::vector<std::unique_ptr<Creature>> migrants(m_islands.size());
+			for (unsigned i = 0; i < m_islands.size(); ++i) {
+				unsigned src_island = (i + (unsigned)m_islands.size() - 1) % (unsigned)m_islands.size();
+				migrants[i] = cloneCreatureToWorld(m_island_candidates[src_island].get(), m_worlds[i].get());
 			}
-
-			//Save best 3 child , it will success as at least last population
-			for (int i = 0; i < 3; i++) {
-				new_creatures.push_back(m_creatures[i]->copy());
-				new_creatures.back()->setPosition(spawn_pos);
-			}
-			
-			for (int i = 0; i < m_creatures.size() - 3; ++i) {
-				//Tournament Selection
-				std::vector<std::unique_ptr<Creature>> chosens;
-
-				while (chosens.size() <= 4) {
-
-					std::cout << m_creatures[0]->fitness << std::endl;
-					int electedIndex = randomSelection(m_creatures);
-
-					bool found = false;
-
-					for (int j = 0; j < chosens.size(); j++) {
-						if (chosens[j].get() == m_creatures[electedIndex].get()) {
-							found = true;
-							break;
-						}
-					}
-					
-					if (!found) {
-						chosens.push_back(m_creatures[electedIndex]->copy());
-					}
-			
+			for (unsigned i = 0; i < m_islands.size(); ++i) {
+				auto& creatures = m_islands[i];
+				if (creatures.size() > 3) { // don't clobber the kept elites
+					migrants[i]->setPosition(spawn_pos);
+					migrants[i]->setActive(true);
+					creatures.back() = std::move(migrants[i]);
 				}
-
-				std::sort(chosens.begin(), chosens.end(), [](const std::unique_ptr<Creature>& c1,
-					const std::unique_ptr<Creature>& c2) { return c1->fitness > c2->fitness; });
-
-				std::unique_ptr<Creature> cross_child = crossoveredCreature(chosens[0], chosens[1]);
-
-				new_creatures.push_back(cross_child->mutatedCopy());
-
-				new_creatures.back()->setPosition(spawn_pos);
 			}
-
-			// Make the new population, current population
-			for (unsigned i = 0; i < m_creatures.size(); ++i)
-				m_creatures[i] = std::move(new_creatures[i]);
-
-
-			// Reset stats
-			curr_creature_id = 0;
-
-			++gen;
 		}
-		// Continue testing creatures
-		else ++curr_creature_id;
-		m_creatures[curr_creature_id]->setActive(true);
+
+		curr_island_id = 0;
+		curr_creature_id = 0;
+		++gen;
 	}
 }
 
 void Game::render() {
 	m_window.clear(sf::Color(135, 206, 250));
 
-	float curr_x = m_creatures[curr_creature_id]->fitness;
+	float curr_x = m_islands[curr_island_id][curr_creature_id]->fitness;
 	float focus_x = show_best ? best_creature->getPosition().x : curr_x;
 	best_x = focus_x;
 
@@ -247,7 +362,7 @@ void Game::render() {
 	sf::RectangleShape line(sf::Vector2f(0.025, 4.0));
 	line.setOrigin(line.getSize().x*0.5f, line.getSize().y);
 	for (int i = 0; i <= 300; ++i) {
-		line.setPosition(i, groundBody->GetPosition().y);
+		line.setPosition(i, groundBodies[0]->GetPosition().y);
 		m_window.draw(line);
 
 		text.setString(std::to_string(i) + " m");
@@ -281,9 +396,10 @@ void Game::render() {
 
 	// Show the overall best
 	text.setString("Current Gen #" + std::to_string(gen) +
+		"  Island #" + std::to_string(curr_island_id + 1) +
 		"  ID #" + std::to_string(curr_creature_id + 1) +
 		"                   Best Creature:  Gen #" + std::to_string(best_c_gen) +
-		"  ID #" + std::to_string(best_c_id + 1) +
+		"  Island #" + std::to_string(best_c_id + 1) +
 		"    Dist: " + setPrecision(best_creature->fitness, 2) + " m");
 	text.setOrigin(text.getGlobalBounds().width*0.5f, text.getGlobalBounds().height*0.5f);
 	text.setPosition(best_x - text.getCharacterSize()*0.01f - 1, text.getPosition().y - 1);
@@ -296,11 +412,11 @@ void Game::render() {
 
 	// Draw Creatures
 	best_creature->render(m_window);
-	m_creatures[curr_creature_id]->render(m_window);
+	m_islands[curr_island_id][curr_creature_id]->render(m_window);
 
 
 	// Draw ground
-	drawRect(va, groundBody, groundFixture, groundDim, sf::Color(0, 104, 10));
+	drawRect(va, groundBodies[0], groundFixtures[0], groundDim, sf::Color(0, 104, 10));
 
 	m_window.draw(va);
 

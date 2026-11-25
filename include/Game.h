@@ -40,6 +40,7 @@ private:
 	float m_accumulator = 0.0f;
 	float m_dt = 1 / 125.0f;
 	sf::RenderWindow m_window;
+	sf::RenderTexture m_highlight; // offscreen layer for the best creature's halo
 	sf::Vector2f m_view_size;
 	float m_global_timer = 0.0f;
 	unsigned m_gen_step = 0;

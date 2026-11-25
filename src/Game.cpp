@@ -16,6 +16,9 @@ const float GENERATION_TIME = 15.0f;
 // Ground extent (metres) behind and ahead of the spawn point at x = 0.
 const float GROUND_BEHIND = 640.0f;
 const float GROUND_AHEAD = 10000.0f;
+// Halo around the best creature: thickness in metres, and its opacity (0-255).
+const float HIGHLIGHT_THICKNESS = 0.25f;
+const sf::Uint8 HIGHLIGHT_ALPHA = 110;
 // Steps each island runs per thread dispatch in fast-sim mode (~1 simulated second),
 // so the window still polls events regularly.
 const unsigned QUICK_BATCH_STEPS = 125;
@@ -378,58 +381,23 @@ void Game::render() {
 		m_window.draw(text);
 	}
 
-	// The HUD below stacks upwards from this point, fixed relative to the view
-	// (where the distance labels sit when the camera is at ground level).
-	text.setPosition(focus_x, view_top + (ground_y - line.getSize().y - default_top));
+	// Halo around the best creature. Drawn opaque offscreen and blended in once, so overlapping
+	// shapes don't stack into darker patches.
+	if (m_highlight.getSize() != m_window.getSize()) {
+		sf::ContextSettings settings;
+		settings.antialiasingLevel = 4;
+		m_highlight.create(m_window.getSize().x, m_window.getSize().y, settings);
+	}
+	m_highlight.clear(sf::Color::Transparent);
+	m_highlight.setView(view);
+	best_creature->renderOutline(m_highlight, HIGHLIGHT_THICKNESS, sf::Color::Red);
+	m_highlight.display();
 
-	// Show the best
-	text.setString(setPrecision(best_x, 2) + " m");
-	text.setOrigin(text.getGlobalBounds().width*0.5f, text.getGlobalBounds().height*0.5f);
-	text.setPosition(best_x - text.getCharacterSize()*0.01f, text.getPosition().y - 1);
-	text_back.setPosition(best_x, text.getGlobalBounds().top + text.getGlobalBounds().height*0.5f);
-	text_back.setSize(sf::Vector2f(text_back.getSize().x*2.0, text_back.getSize().y));
-	text_back.setOrigin(text_back.getSize()*0.5f);
-	m_window.draw(text_back);
-	m_window.draw(text);
-
-	// Show the timer
-	text.setString("Time: " + setPrecision(m_global_timer, 2) + " sec");
-	text.setOrigin(0, 0);
-	text.setPosition(best_x, text.getPosition().y - 1);
-	text_back.setPosition(best_x, text.getGlobalBounds().top + text.getGlobalBounds().height*0.5f);
-	text_back.setSize(sf::Vector2f(text_back.getSize().x*1.4, text_back.getSize().y));
-	text_back.setOrigin(0.2, text_back.getSize().y*0.5f);
-	m_window.draw(text_back);
-	m_window.draw(text);
-
-	// Show the overall best
-	text.setString("Current Gen #" + std::to_string(gen) +
-		"  Island #" + std::to_string(curr_island_id + 1) +
-		"  ID #" + std::to_string(curr_creature_id + 1) +
-		"                   Best Creature:  Gen #" + std::to_string(best_c_gen) +
-		"  Island #" + std::to_string(best_c_id + 1) +
-		"    Dist: " + setPrecision(best_creature->fitness, 2) + " m");
-	text.setOrigin(text.getGlobalBounds().width*0.5f, text.getGlobalBounds().height*0.5f);
-	text.setPosition(best_x - text.getCharacterSize()*0.01f - 1, text.getPosition().y - 1);
-	text_back.setPosition(best_x - 1, text.getGlobalBounds().top + text.getGlobalBounds().height*0.5f);
-	text_back.setSize(sf::Vector2f(text_back.getSize().x*6.0, text_back.getSize().y));
-	text_back.setOrigin(0.2, text_back.getSize().y*0.5f);
-	m_window.draw(text_back);
-	m_window.draw(text);
-
-	// Show the flying rule
-	std::string flying = m_allow_flying ? "on" : "off";
-	if (m_allow_flying != Creature::allow_flying) flying += " from next generation";
-	text.setString("Flying (F): " + flying);
-	text.setOrigin(0, 0);
-	text.setPosition(best_x, text.getPosition().y - 1);
-	sf::FloatRect bounds = text.getGlobalBounds();
-	text_back.setOrigin(0, 0);
-	text_back.setSize(sf::Vector2f(bounds.width + 0.4f, text_back.getSize().y));
-	text_back.setPosition(bounds.left - 0.2f, bounds.top + bounds.height*0.5f - text_back.getSize().y*0.5f);
-	m_window.draw(text_back);
-	m_window.draw(text);
-
+	sf::Sprite halo(m_highlight.getTexture());
+	halo.setColor(sf::Color(255, 255, 255, HIGHLIGHT_ALPHA));
+	m_window.setView(m_window.getDefaultView());
+	m_window.draw(halo);
+	m_window.setView(view);
 
 	// Draw Creatures
 	best_creature->render(m_window);
@@ -440,6 +408,45 @@ void Game::render() {
 	drawRect(va, groundBodies[0], groundFixtures[0], groundDim, sf::Color(0, 104, 10));
 
 	m_window.draw(va);
+
+	// HUD: drawn last, in screen pixels, in the top-left corner
+	m_window.setView(m_window.getDefaultView());
+
+	std::string camera = show_best ? "best creature"
+		: "island #" + std::to_string(curr_island_id + 1) + ", creature #" + std::to_string(curr_creature_id + 1);
+	std::string flying = m_allow_flying ? "on" : "off";
+	if (m_allow_flying != Creature::allow_flying) flying += " from next generation";
+
+	std::vector<std::string> hud_lines = {
+		"Generation #" + std::to_string(gen) + "   Time: " + setPrecision(m_global_timer, 2) + " sec",
+		"Camera (H): " + camera,
+		"Distance: " + setPrecision(focus_x, 2) + " m",
+		"Best: " + setPrecision(best_creature->fitness, 2) + " m  (gen #" + std::to_string(best_c_gen) +
+			", island #" + std::to_string(best_c_id + 1) + ")",
+		"Flying (F): " + flying,
+	};
+
+	const float margin = 10.0f, padding = 8.0f, line_height = 20.0f;
+	sf::Text hud_text;
+	hud_text.setFont(m_font);
+	hud_text.setCharacterSize(14);
+	hud_text.setFillColor(sf::Color::Black);
+
+	float panel_width = 0.0f;
+	for (const auto& s : hud_lines) {
+		hud_text.setString(s);
+		panel_width = std::max(panel_width, hud_text.getLocalBounds().width);
+	}
+	sf::RectangleShape panel(sf::Vector2f(panel_width + 2 * padding, hud_lines.size() * line_height + 2 * padding));
+	panel.setPosition(margin, margin);
+	panel.setFillColor(sf::Color(255, 255, 255, 200));
+	m_window.draw(panel);
+
+	for (unsigned i = 0; i < hud_lines.size(); ++i) {
+		hud_text.setString(hud_lines[i]);
+		hud_text.setPosition(margin + padding, margin + padding + i * line_height);
+		m_window.draw(hud_text);
+	}
 
 	m_window.display();
 }

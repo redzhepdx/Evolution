@@ -64,6 +64,8 @@ public:
 	void setPosition(const sf::Vector2f& position);
 	void update(float dt, bool update_fitness = true);
 	void render(sf::RenderTarget& rt);
+	// Draws the creature's silhouette grown by `thickness` in a single solid color.
+	void renderOutline(sf::RenderTarget& rt, float thickness, const sf::Color& color);
 	const sf::Vector2f& getPosition() const { return pos; };
 
 	void saveSnapshot(std::unique_ptr<Creature>& out);

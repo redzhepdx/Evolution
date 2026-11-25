@@ -4,6 +4,10 @@ A genetic-algorithm walking-creature simulator, built with [Box2D](https://box2d
 and [SFML](https://www.sfml-dev.org/) for rendering. Soft-body creatures made of nodes and muscles
 evolve over generations to walk as far as possible.
 
+<p align="center">
+  <img src="docs/demo.gif" alt="Generation 50: the best creature so far, outlined in red, walks away from a newly bred one">
+</p>
+
 ## Building
 
 Dependencies: CMake 3.10+, a C++14 compiler, SFML 2, and box2d.
@@ -66,4 +70,4 @@ on a weak strategy has a chance to be rescued by genes from elsewhere.
 - **Elitism**: each island's top 3 creatures are carried into the next generation unmodified.
 
 The best creature ever seen across all islands is tracked separately and always kept active and
-rendered alongside whichever creature the camera is currently focused on.
+rendered, outlined in red, alongside whichever creature the camera is currently focused on.

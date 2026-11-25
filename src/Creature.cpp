@@ -386,6 +386,31 @@ void Muscle::render(sf::RenderTarget& rt) {
 	rt.draw(rect);
 }
 
+void Creature::renderOutline(sf::RenderTarget& rt, float thickness, const sf::Color& color) {
+	for (auto& m : muscles) {
+		if (m->joint == nullptr) continue;
+		b2Vec2 pa = m->joint->GetBodyA()->GetPosition();
+		b2Vec2 pb = m->joint->GetBodyB()->GetPosition();
+		sf::Vector2f a(pa.x, pa.y), b(pb.x, pb.y);
+
+		sf::RectangleShape rect(sf::Vector2f(MUSCLE_THICKNESS + 2.0f * thickness, magnitude(b - a)));
+		rect.setOrigin(rect.getSize().x * 0.5f, rect.getSize().y);
+		rect.setPosition(a);
+		rect.rotate(vecToAngle(b - a));
+		rect.setFillColor(color);
+		rt.draw(rect);
+	}
+	// Grown node circles also round off the muscle ends.
+	for (auto& n : nodes) {
+		if (n->body == nullptr) continue;
+		sf::CircleShape circ(n->shape.m_radius + thickness);
+		circ.setOrigin(circ.getRadius(), circ.getRadius());
+		circ.setPosition(n->body->GetPosition().x, n->body->GetPosition().y);
+		circ.setFillColor(color);
+		rt.draw(circ);
+	}
+}
+
 
 
 

@@ -254,10 +254,25 @@ void Creature::update(float dt, bool update_fitness) {
 	}
 
 	// Set position to center of nodes
+	float prev_x = pos.x;
 	updatePosition();
 
+	if (!update_fitness) return;
 	// Fitness is where it ends up, not the furthest it reached, so a single lunge or fall forward isn't rewarded
-	if (update_fitness) fitness = pos.x;
+	if (allow_flying) fitness = pos.x;
+	else if (touchingGround()) fitness += pos.x - prev_x;
+}
+
+bool Creature::allow_flying = true;
+
+// Nodes only collide with the ground, so any touching contact means the creature is on it.
+bool Creature::touchingGround() const {
+	for (auto& n : nodes) {
+		if (n->body == nullptr) continue;
+		for (b2ContactEdge* ce = n->body->GetContactList(); ce; ce = ce->next)
+			if (ce->contact->IsTouching()) return true;
+	}
+	return false;
 }
 
 void Creature::setActive(bool active) {

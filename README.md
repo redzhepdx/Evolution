@@ -25,6 +25,7 @@ make
 | `J` | Toggle fast simulation (skips rendering, runs physics as fast as possible) |
 | `K` | Hold to simulate at 4x speed |
 | `H` | Toggle camera focus between the current test creature and the overall best |
+| `F` | Toggle flying (applies from the next generation). With flying off, only distance covered while touching the ground counts |
 | `Esc` | Close the window |
 
 ## How it works
@@ -33,6 +34,10 @@ Each creature is a small ragdoll of `Node`s (circular bodies) connected by `Musc
 (`b2DistanceJoint`s that oscillate between a short and long length). A creature's fitness is its
 horizontal position at the end of a fixed 15-second evaluation window, so it has to keep moving
 rather than just lunging forward once.
+
+Creatures can learn to launch themselves into the air, which is allowed by default. With flying
+turned off (`F`), fitness only adds up forward progress made while at least one node touches the
+ground, so evolution favours walking.
 
 ### Islands
 

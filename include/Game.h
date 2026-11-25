@@ -74,6 +74,10 @@ private:
 	bool cam_key_last_frame = false;
 	bool show_best = false;
 
+	// Requested flying rule; copied to Creature::allow_flying at the next generation boundary.
+	bool m_allow_flying = true;
+	bool f_last_frame = false;
+
 	std::unique_ptr<Creature> best_creature = nullptr;
 	unsigned m_best_world_idx = 0; // which island's world best_creature's bodies live in
 	int best_c_gen = 0;

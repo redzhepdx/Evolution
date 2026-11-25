@@ -73,6 +73,7 @@ public:
 	void addNode(std::unique_ptr<Node> node);
 	void addMuscle(int a = -1, int b = -1);
 	void setActive(bool active);
+	bool touchingGround() const;
 	std::unique_ptr<Creature> mutatedCopy();
 	std::unique_ptr<Creature> copy();
 	void removeRandomNode();
@@ -86,6 +87,10 @@ public:
 	float timer = 0.0f;
 	float heart_beat = 0.5f;
 	float fitness = 0.0f;
+
+	// When false, fitness only counts forward progress made while touching the ground.
+	// Only change it between steps (no island threads running).
+	static bool allow_flying;
 
 	b2World* world = nullptr;
 	std::unique_ptr<Creature> snapshot;

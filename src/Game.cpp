@@ -95,7 +95,7 @@ void Game::restart() {
 void Game::run() {
 	sf::ContextSettings window_settings;
 	window_settings.antialiasingLevel = 4;
-	m_window.create(sf::VideoMode(m_view_size.x, m_view_size.y), "KarsWorld", sf::Style::Default, window_settings);
+	m_window.create(sf::VideoMode(m_view_size.x, m_view_size.y), "EvolutionarySprint", sf::Style::Default, window_settings);
 	sf::Clock clock;
 
 	while (m_window.isOpen()) {
@@ -110,6 +110,11 @@ void Game::run() {
 		bool cam_key_now = sf::Keyboard::isKeyPressed(sf::Keyboard::H);
 		if (cam_key_now && !cam_key_last_frame) show_best = !show_best;
 		cam_key_last_frame = cam_key_now;
+
+		// Toggle whether distance covered in the air counts towards fitness
+		bool f_now = sf::Keyboard::isKeyPressed(sf::Keyboard::F);
+		if (f_now && !f_last_frame) m_allow_flying = !m_allow_flying;
+		f_last_frame = f_now;
 
 		// Check events
 		sf::Event event;
@@ -238,8 +243,12 @@ void Game::advanceIslandGeneration(unsigned idx, const sf::Vector2f& spawn_pos) 
 	for (unsigned i = 0; i < creatures.size(); ++i)
 		creatures[i] = std::move(new_creatures[i]);
 
-	// Activate the whole new generation at once
-	for (auto& c : creatures) c->setActive(true);
+	// Activate the whole new generation at once. Fitness restarts from zero because
+	// ground-only fitness accumulates, and elites would otherwise keep last generation's score.
+	for (auto& c : creatures) {
+		c->fitness = 0.0f;
+		c->setActive(true);
+	}
 }
 
 unsigned Game::update(unsigned max_steps) {
@@ -319,6 +328,7 @@ unsigned Game::update(unsigned max_steps) {
 		curr_island_id = 0;
 		curr_creature_id = 0;
 		++gen;
+		Creature::allow_flying = m_allow_flying;
 	}
 	return steps;
 }
@@ -404,6 +414,19 @@ void Game::render() {
 	text_back.setPosition(best_x - 1, text.getGlobalBounds().top + text.getGlobalBounds().height*0.5f);
 	text_back.setSize(sf::Vector2f(text_back.getSize().x*6.0, text_back.getSize().y));
 	text_back.setOrigin(0.2, text_back.getSize().y*0.5f);
+	m_window.draw(text_back);
+	m_window.draw(text);
+
+	// Show the flying rule
+	std::string flying = m_allow_flying ? "on" : "off";
+	if (m_allow_flying != Creature::allow_flying) flying += " from next generation";
+	text.setString("Flying (F): " + flying);
+	text.setOrigin(0, 0);
+	text.setPosition(best_x, text.getPosition().y - 1);
+	sf::FloatRect bounds = text.getGlobalBounds();
+	text_back.setOrigin(0, 0);
+	text_back.setSize(sf::Vector2f(bounds.width + 0.4f, text_back.getSize().y));
+	text_back.setPosition(bounds.left - 0.2f, bounds.top + bounds.height*0.5f - text_back.getSize().y*0.5f);
 	m_window.draw(text_back);
 	m_window.draw(text);
 

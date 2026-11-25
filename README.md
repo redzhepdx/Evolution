@@ -30,8 +30,9 @@ make
 ## How it works
 
 Each creature is a small ragdoll of `Node`s (circular bodies) connected by `Muscle`s
-(`b2DistanceJoint`s that oscillate between a short and long length). A creature's fitness is the
-furthest horizontal distance it reaches during a fixed evaluation window.
+(`b2DistanceJoint`s that oscillate between a short and long length). A creature's fitness is its
+horizontal position at the end of a fixed 15-second evaluation window, so it has to keep moving
+rather than just lunging forward once.
 
 ### Islands
 
@@ -51,13 +52,13 @@ on a weak strategy has a chance to be rescued by genes from elsewhere.
 
 ### Genetic algorithm
 
-- **Selection**: fitness-proportionate tournament selection (fitness weighted by `fitness^3` to
-  favor stronger performers), picking distinct individuals per tournament.
-- **Crossover**: a single-point crossover over a creature's nodes/muscles between two tournament
-  winners.
-- **Mutation**: small chances per generation to add/remove a node or muscle, plus continuous
-  mutation of muscle lengths, timing, strength, and heartbeat.
-- **Elitism**: each island's top creatures are carried into the next generation unmodified.
+- **Selection**: tournament selection. Each parent is the fittest of 3 creatures drawn at random.
+- **Crossover**: the child keeps the fitter parent's body. Where both parents have the same node or
+  muscle, each of its genes (friction, muscle lengths, timing, strength, and the heartbeat) comes
+  from either parent at random.
+- **Mutation**: each continuous gene has a 25% chance of being nudged by a normally distributed
+  amount. There is also a small chance per child of adding or removing a node or muscle.
+- **Elitism**: each island's top 3 creatures are carried into the next generation unmodified.
 
 The best creature ever seen across all islands is tracked separately and always kept active and
 rendered alongside whichever creature the camera is currently focused on.

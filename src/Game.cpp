@@ -2,6 +2,8 @@
 #include "Game.h"
 #include "utility.h"
 #include <iostream>
+#include <cmath>
+#include <algorithm>
 #include <thread>
 #include <mutex>
 
@@ -10,6 +12,13 @@ const unsigned POPULATION = 1000;
 // How often (in generations) islands exchange their best creature, to limit
 // each island's independent population from settling into its own local optimum.
 const unsigned MIGRATION_INTERVAL = 5;
+const float GENERATION_TIME = 15.0f;
+// Ground extent (metres) behind and ahead of the spawn point at x = 0.
+const float GROUND_BEHIND = 640.0f;
+const float GROUND_AHEAD = 10000.0f;
+// Steps each island runs per thread dispatch in fast-sim mode (~1 simulated second),
+// so the window still polls events regularly.
+const unsigned QUICK_BATCH_STEPS = 125;
 
 static std::mutex g_cout_mutex;
 
@@ -30,7 +39,7 @@ void Game::init(float _dt) {
 	unsigned num_islands = std::max(1u, std::thread::hardware_concurrency());
 	num_islands = std::min(num_islands, POPULATION);
 
-	groundDim = sf::Vector2f(m_view_size.x, 1.0f);
+	groundDim = sf::Vector2f(GROUND_BEHIND + GROUND_AHEAD, 1.0f);
 
 	m_worlds.resize(num_islands);
 	m_islands.resize(num_islands);
@@ -43,7 +52,7 @@ void Game::init(float _dt) {
 
 		// Make the ground
 		b2BodyDef groundBodyDef;
-		groundBodyDef.position.Set(0.0f, m_view_size.y - groundDim.y*0.5f);
+		groundBodyDef.position.Set((GROUND_AHEAD - GROUND_BEHIND)*0.5f, m_view_size.y - groundDim.y*0.5f);
 
 		groundBodies[i] = m_worlds[i]->CreateBody(&groundBodyDef);
 
@@ -113,17 +122,15 @@ void Game::run() {
 			}
 		}
 
-		if (simulate_quick) update(); // Just simulate as fast as possible
+		if (simulate_quick) update(QUICK_BATCH_STEPS); // Just simulate as fast as possible
 		else {
 			// Update
 			if (sf::Keyboard::isKeyPressed(sf::Keyboard::K)) elapsed *= 4.0; // Simulate 4x
 			m_accumulator += elapsed;
 
-			while (m_accumulator > m_dt) {
-				m_accumulator -= m_dt;
-
-				update();
-			}
+			unsigned pending = (unsigned)(m_accumulator / m_dt);
+			m_accumulator -= pending * m_dt;
+			while (pending > 0) pending -= update(pending);
 
 			// Render
 			render();
@@ -138,21 +145,16 @@ void Game::spawnCreature(unsigned island_idx) {
 	island.back()->setPosition(getSpawnPos());
 }
 
-static inline float getFitness(float k) {
-	return k*k*k;
-}
+const int TOURNAMENT_SIZE = 3;
 
-int randomSelection(std::vector<std::unique_ptr<Creature>>& p) {
-	float sum_fitness = 0;
-	for (unsigned i = 0; i < p.size(); ++i) sum_fitness += getFitness(p[i]->fitness);
-
-	float val = std::rand() % std::max(1, (int)sum_fitness);
-	for (unsigned i = 0; i < p.size(); ++i) {
-		val -= getFitness(p[i]->fitness);
-		if (val <= 0) return i;
+// The fittest of k uniformly drawn creatures.
+static int tournamentSelect(const std::vector<std::unique_ptr<Creature>>& p, int k) {
+	int best = random_int(0, (int)p.size() - 1);
+	for (int i = 1; i < k; ++i) {
+		int c = random_int(0, (int)p.size() - 1);
+		if (p[c]->fitness > p[best]->fitness) best = c;
 	}
-
-	return p.size() - 1;
+	return best;
 }
 
 std::unique_ptr<Creature> Game::cloneCreatureToWorld(Creature* src, b2World* dest_world) {
@@ -178,9 +180,14 @@ std::unique_ptr<Creature> Game::cloneCreatureToWorld(Creature* src, b2World* des
 	return dst;
 }
 
-void Game::stepIsland(unsigned idx) {
-	for (auto& c : m_islands[idx]) c->update(m_dt);
-	m_worlds[idx]->Step(m_dt, 8, 3);
+void Game::stepIsland(unsigned idx, unsigned steps) {
+	// best_creature's bodies live in one island's world, so only that island's thread may touch it.
+	bool owns_best = (idx == m_best_world_idx);
+	for (unsigned s = 0; s < steps; ++s) {
+		if (owns_best) best_creature->update(m_dt, false);
+		for (auto& c : m_islands[idx]) c->update(m_dt);
+		m_worlds[idx]->Step(m_dt, 8, 3);
+	}
 }
 
 void Game::advanceIslandGeneration(unsigned idx, const sf::Vector2f& spawn_pos) {
@@ -214,40 +221,13 @@ void Game::advanceIslandGeneration(unsigned idx, const sf::Vector2f& spawn_pos) 
 	}
 
 	for (int i = 0; i < (int)creatures.size() - keep_count; ++i) {
-		//Tournament Selection
-		std::vector<std::unique_ptr<Creature>> chosens;
-		std::vector<int> chosen_indices;
+		int p1 = tournamentSelect(creatures, TOURNAMENT_SIZE);
+		int p2 = tournamentSelect(creatures, TOURNAMENT_SIZE);
+		for (int tries = 0; p2 == p1 && tries < 10; ++tries) p2 = tournamentSelect(creatures, TOURNAMENT_SIZE);
+		if (creatures[p2]->fitness > creatures[p1]->fitness) std::swap(p1, p2);
 
-		unsigned tournament_size = std::min<size_t>(4, creatures.size() - 1);
-		unsigned selection_attempts = 0;
-		unsigned max_weighted_attempts = (unsigned)creatures.size() * 20u + 100u;
-		while (chosens.size() <= tournament_size) {
-			// Fitness-weighted selection can degenerate to a single deterministic
-			// index when total fitness is near zero (e.g. early generations, or
-			// small islands). Fall back to a uniform pick so this always terminates.
-			int electedIndex = (++selection_attempts <= max_weighted_attempts)
-				? randomSelection(creatures)
-				: random_int(0, (int)creatures.size() - 1);
-
-			bool found = false;
-
-			for (unsigned j = 0; j < chosen_indices.size(); j++) {
-				if (chosen_indices[j] == electedIndex) {
-					found = true;
-					break;
-				}
-			}
-
-			if (!found) {
-				chosen_indices.push_back(electedIndex);
-				chosens.push_back(creatures[electedIndex]->copy());
-			}
-		}
-
-		std::sort(chosens.begin(), chosens.end(), [](const std::unique_ptr<Creature>& c1,
-			const std::unique_ptr<Creature>& c2) { return c1->fitness > c2->fitness; });
-
-		std::unique_ptr<Creature> cross_child = crossoveredCreature(chosens[0], chosens[1]);
+		// Breed from the parents' snapshots (their spawn pose), not their post-run pose.
+		std::unique_ptr<Creature> cross_child = crossoveredCreature(creatures[p1]->snapshot, creatures[p2]->snapshot);
 
 		new_creatures.push_back(cross_child->mutatedCopy());
 
@@ -262,22 +242,27 @@ void Game::advanceIslandGeneration(unsigned idx, const sf::Vector2f& spawn_pos) 
 	for (auto& c : creatures) c->setActive(true);
 }
 
-void Game::update() {
-	m_global_timer += m_dt;
+unsigned Game::update(unsigned max_steps) {
+	const unsigned gen_steps = (unsigned)std::lround(GENERATION_TIME / m_dt);
+	unsigned steps = std::min(max_steps, gen_steps - m_gen_step);
+	if (steps == 0) return 0;
 
-	best_creature->update(m_dt, false);
-
-	// Step every island's physics and creatures in parallel across cores.
+	// Islands don't interact within a generation, so each thread runs its whole
+	// batch of steps independently and we only sync once per batch.
 	{
 		std::vector<std::thread> threads;
 		threads.reserve(m_worlds.size());
 		for (unsigned i = 0; i < m_worlds.size(); ++i)
-			threads.emplace_back(&Game::stepIsland, this, i);
+			threads.emplace_back(&Game::stepIsland, this, i, steps);
 		for (auto& t : threads) t.join();
 	}
 
-	// Evaluate the whole population for 15s, then breed the next generation
-	if (m_global_timer >= 15.0f) {
+	m_gen_step += steps;
+	m_global_timer = m_gen_step * m_dt;
+
+	// Evaluate the whole population for GENERATION_TIME, then breed the next generation
+	if (m_gen_step >= gen_steps) {
+		m_gen_step = 0;
 		m_global_timer = 0.0f;
 
 		sf::Vector2f spawn_pos = getSpawnPos();
@@ -295,24 +280,9 @@ void Game::update() {
 			for (auto& t : threads) t.join();
 		}
 
-		// Pick the best creature across all islands
-		unsigned best_island = 0;
-		for (unsigned i = 1; i < m_island_candidates.size(); ++i)
-			if (m_island_candidates[i]->fitness > m_island_candidates[best_island]->fitness) best_island = i;
-
-		if (m_island_candidates[best_island]->fitness > best_creature->fitness) {
-			best_c_gen = gen;
-			best_c_id = best_island;
-			best_creature = std::move(m_island_candidates[best_island]);
-		}
-		else { // Reset
-			best_creature = best_creature->copy();
-		}
-		best_creature->setActive(true);
-		best_creature->setPosition(spawn_pos);
-
 		// Periodically exchange each island's best creature with its neighbor's,
 		// so a converged island can be rescued by genes from elsewhere.
+		// Must run before picking the overall best, which moves a candidate out.
 		if (m_islands.size() > 1 && gen % MIGRATION_INTERVAL == 0) {
 			std::vector<std::unique_ptr<Creature>> migrants(m_islands.size());
 			for (unsigned i = 0; i < m_islands.size(); ++i) {
@@ -329,21 +299,43 @@ void Game::update() {
 			}
 		}
 
+		// Pick the best creature across all islands
+		unsigned best_island = 0;
+		for (unsigned i = 1; i < m_island_candidates.size(); ++i)
+			if (m_island_candidates[i]->fitness > m_island_candidates[best_island]->fitness) best_island = i;
+
+		if (m_island_candidates[best_island]->fitness > best_creature->fitness) {
+			best_c_gen = gen;
+			best_c_id = best_island;
+			best_creature = std::move(m_island_candidates[best_island]);
+			m_best_world_idx = best_island;
+		}
+		else { // Reset
+			best_creature = best_creature->copy();
+		}
+		best_creature->setActive(true);
+		best_creature->setPosition(spawn_pos);
+
 		curr_island_id = 0;
 		curr_creature_id = 0;
 		++gen;
 	}
+	return steps;
 }
 
 void Game::render() {
 	m_window.clear(sf::Color(135, 206, 250));
 
-	float curr_x = m_islands[curr_island_id][curr_creature_id]->fitness;
-	float focus_x = show_best ? best_creature->getPosition().x : curr_x;
+	const Creature* focus = show_best ? best_creature.get() : m_islands[curr_island_id][curr_creature_id].get();
+	float focus_x = focus->getPosition().x;
 	best_x = focus_x;
 
+	// Keep the ground in shot, but rise with the creature once it flies into the top 40% of the view.
+	float ground_y = groundBodies[0]->GetPosition().y;
+	float default_top = m_view_size.y - viewDimensions.y;
+	float view_top = std::min(default_top, focus->getPosition().y - viewDimensions.y*0.4f);
 
-	view.reset(sf::FloatRect(focus_x - viewDimensions.x*0.5f, m_view_size.y - viewDimensions.y, viewDimensions.x, viewDimensions.y));
+	view.reset(sf::FloatRect(focus_x - viewDimensions.x*0.5f, view_top, viewDimensions.x, viewDimensions.y));
 	m_window.setView(view);
 
 	sf::VertexArray va(sf::Quads);
@@ -361,8 +353,10 @@ void Game::render() {
 
 	sf::RectangleShape line(sf::Vector2f(0.025, 4.0));
 	line.setOrigin(line.getSize().x*0.5f, line.getSize().y);
-	for (int i = 0; i <= 300; ++i) {
-		line.setPosition(i, groundBodies[0]->GetPosition().y);
+	int first_marker = std::max(0, (int)std::floor(focus_x - viewDimensions.x*0.5f));
+	int last_marker = std::min((int)GROUND_AHEAD, (int)std::ceil(focus_x + viewDimensions.x*0.5f));
+	for (int i = first_marker; i <= last_marker; ++i) {
+		line.setPosition(i, ground_y);
 		m_window.draw(line);
 
 		text.setString(std::to_string(i) + " m");
@@ -373,6 +367,10 @@ void Game::render() {
 		m_window.draw(text_back);
 		m_window.draw(text);
 	}
+
+	// The HUD below stacks upwards from this point, fixed relative to the view
+	// (where the distance labels sit when the camera is at ground level).
+	text.setPosition(focus_x, view_top + (ground_y - line.getSize().y - default_top));
 
 	// Show the best
 	text.setString(setPrecision(best_x, 2) + " m");
@@ -423,59 +421,44 @@ void Game::render() {
 	m_window.display();
 }
 
+// The child keeps parent_1's body (the fitter parent) and takes each gene from either
+// parent at random where parent_2 has a matching node or muscle (same node indices).
 std::unique_ptr<Creature> Game::crossoveredCreature(std::unique_ptr<Creature> &parent_1, std::unique_ptr<Creature> &parent_2) {
-	
+	auto coin = []() { return random_int(0, 1) == 1; };
+
 	std::unique_ptr<Creature> child = std::make_unique<Creature>();
 	child->world = parent_1->world;
-	child->heart_beat = parent_1->heart_beat;
-	
+	child->heart_beat = coin() ? parent_2->heart_beat : parent_1->heart_beat;
 
-	int randomCromosomeIndex = random_int(0, parent_1->nodes.size() - 1);
+	for (unsigned i = 0; i < parent_1->nodes.size(); ++i) {
+		Node* n = parent_1->nodes[i].get();
+		float friction = n->fixture_def.friction;
+		if (i < parent_2->nodes.size() && coin()) friction = parent_2->nodes[i]->fixture_def.friction;
 
-	for (int i = 0; i <= randomCromosomeIndex; i++) {
-		child->nodes.push_back(parent_1->nodes[i]->copy());
+		auto node = std::make_unique<Node>();
+		node->init(child->world, n->getPosition(), friction);
+		child->nodes.push_back(std::move(node));
 	}
 
-	for (int m = 0; m < parent_1->muscles.size(); m++) {
-		if (parent_1->muscles[m]->a <= randomCromosomeIndex && parent_1->muscles[m]->b <= randomCromosomeIndex) {
-			child->addMuscle(parent_1->muscles[m]->a, parent_1->muscles[m]->b);
-		}
-	}
-
-	if (randomCromosomeIndex < parent_2->nodes.size()) {
-		for (int i = randomCromosomeIndex; i<parent_2->nodes.size(); i++) {
-			child->nodes.push_back(parent_2->nodes[i]->copy());
-		}
-		
-		for (int m = 0; m < parent_2->muscles.size(); m++) {
-			if (parent_2->muscles[m]->a >= randomCromosomeIndex && parent_2->muscles[m]->b >= randomCromosomeIndex) {
-				child->addMuscle(parent_2->muscles[m]->a, parent_2->muscles[m]->b);
-			}
-		}
-	}
-
-	bool connectionMuscleFound = false;
-	for (int m = 0; m < child->muscles.size(); m++) {
-		for (int i = 0; i < child->nodes.size(); i++) {
-			for (int j = 0; j < child->nodes.size(); j++) {
-				if ((child->muscles[m]->a != i || child->muscles[m]->b != j) && i != j) {
-					child->addMuscle(i, j);
-					connectionMuscleFound = true;
+	for (auto& m1 : parent_1->muscles) {
+		Muscle* genes = m1.get();
+		if (coin()) {
+			for (auto& m2 : parent_2->muscles) {
+				if ((m2->a == m1->a && m2->b == m1->b) || (m2->a == m1->b && m2->b == m1->a)) {
+					genes = m2.get();
 					break;
 				}
 			}
-			if (connectionMuscleFound) {
-				break;
-			}
 		}
-		if (connectionMuscleFound) {
-			break;
-		}
+
+		auto muscle = std::make_unique<Muscle>();
+		muscle->init(child->world, child->nodes, m1->a, m1->b,
+			genes->short_len, genes->long_len, genes->extend_time, genes->contract_time, genes->strength);
+		child->muscles.push_back(std::move(muscle));
 	}
 
+	child->setActive(false);
 	child->saveSnapshot(child->snapshot);
-	child->checkLoneNodes();
-
 	return child;
 }
 

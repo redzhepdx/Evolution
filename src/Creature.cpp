@@ -5,8 +5,14 @@
 Creature::Creature() {
 }
 
+const float MUTATION_RATE = 0.25f;
+
+// Mutation offset in units of each gene's step size: most genes are left unchanged,
+// the rest are nudged by N(0, 0.5).
 float r() {
-	return pow(random_float(-1, 1), 19);
+	if (random_float(0.0f, 1.0f) >= MUTATION_RATE) return 0.0f;
+	thread_local std::normal_distribution<float> normal(0.0f, 0.5f);
+	return normal(mt);
 }
 
 void Creature::init(b2World* world_, const sf::Vector2f& position) {
@@ -67,7 +73,7 @@ std::unique_ptr<Creature> Creature::copy() {
 std::unique_ptr<Creature> Creature::mutatedCopy() {
 	std::unique_ptr<Creature> mutated = std::make_unique<Creature>();
 	mutated->world = world;
-	mutated->heart_beat = heart_beat + 0.2f*r();
+	mutated->heart_beat = std::max(0.05f, heart_beat + 0.2f*r()); // update() divides by heart_beat
 
 	for (unsigned i = 0; i < nodes.size(); ++i)
 		mutated->nodes.push_back(nodes[i]->mutatedCopy());
@@ -126,12 +132,15 @@ void Creature::removeRandomMuscle() {
 void Creature::checkMuscleOverlap() {
 	std::vector<Muscle*> muscles_to_remove;
 	for (unsigned i = 0; i < muscles.size(); ++i) {
+		Muscle* first = muscles[i].get();
+		if (first->a == first->b) {
+			muscles_to_remove.push_back(first);
+			continue;
+		}
 		for (unsigned j = i + 1; j < muscles.size(); ++j) {
-			Muscle* first = muscles[i].get();
 			Muscle* second = muscles[j].get();
 			if ((first->a == second->a && first->b == second->b) ||
-				(first->a == second->b && first->b == second->a) ||
-				(first->a == first->b)) {
+				(first->a == second->b && first->b == second->a)) {
 				if (!contains(muscles_to_remove, first)) muscles_to_remove.push_back(first);
 			}
 		}
@@ -247,8 +256,8 @@ void Creature::update(float dt, bool update_fitness) {
 	// Set position to center of nodes
 	updatePosition();
 
-	// His distance is his fitness
-	if (update_fitness && pos.x > fitness) fitness = pos.x;
+	// Fitness is where it ends up, not the furthest it reached, so a single lunge or fall forward isn't rewarded
+	if (update_fitness) fitness = pos.x;
 }
 
 void Creature::setActive(bool active) {

@@ -15,7 +15,9 @@ public:
 	void init(float _dt);
 	void run();
 	void restart();
-	void update();
+	// Runs up to max_steps physics steps (stopping early at a generation boundary)
+	// and returns how many were run.
+	unsigned update(unsigned max_steps = 1);
 	void render();
 
 	float getDeltaTime();
@@ -28,7 +30,7 @@ public:
 	std::unique_ptr<Creature> crossoveredCreature(std::unique_ptr<Creature> &parent_1, std::unique_ptr<Creature> &parent_2);
 	sf::Vector2f getSpawnPos();
 private:
-	void stepIsland(unsigned idx);
+	void stepIsland(unsigned idx, unsigned steps);
 	void advanceIslandGeneration(unsigned idx, const sf::Vector2f& spawn_pos);
 	// Deep-clones a creature's genome into a fresh body in dest_world (unlike
 	// Creature::copy(), which always rebuilds in the source's own world) so a
@@ -40,6 +42,7 @@ private:
 	sf::RenderWindow m_window;
 	sf::Vector2f m_view_size;
 	float m_global_timer = 0.0f;
+	unsigned m_gen_step = 0;
 	bool m_first_launch = true;
 	sf::Font m_font;
 
@@ -72,6 +75,7 @@ private:
 	bool show_best = false;
 
 	std::unique_ptr<Creature> best_creature = nullptr;
+	unsigned m_best_world_idx = 0; // which island's world best_creature's bodies live in
 	int best_c_gen = 0;
 	int best_c_id = 0;
 };
